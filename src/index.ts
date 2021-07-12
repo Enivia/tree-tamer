@@ -43,10 +43,6 @@ export default class TreeTamer<DataType extends Record<string, any>> {
     }, []);
   }
 
-  public forEach(callback: (n: DataType) => void) {
-    this.$forEach(this.data, callback);
-  }
-
   public insert(child: DataType, callback: NodeCallback<DataType>) {
     this.$update(draft => {
       this.$forEach(<DataType[]>draft, n => {
@@ -74,6 +70,34 @@ export default class TreeTamer<DataType extends Record<string, any>> {
         }
       });
     });
+  }
+
+  public forEach(callback: (n: DataType) => void) {
+    this.$forEach(this.data, callback);
+  }
+
+  public find(callback: NodeCallback<DataType>) {
+    if (!this.data) return;
+    let open = [...this.data];
+    let node: DataType;
+    while ((node = <DataType>open.pop())) {
+      if (callback(node)) {
+        return node;
+      }
+      if (node[this.subKey]) {
+        open = node[this.subKey].concat(open);
+      }
+    }
+  }
+
+  public findAll(callback: NodeCallback<DataType>) {
+    const result: DataType[] = [];
+    this.$forEach(this.data, n => {
+      if (callback(n)) {
+        result.push(n);
+      }
+    });
+    return result;
   }
 
   public filter(callback: NodeCallback<DataType>) {
