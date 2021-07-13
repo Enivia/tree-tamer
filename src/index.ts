@@ -2,30 +2,35 @@ import produce, { Draft } from 'immer';
 
 const DEFAULT_SUB_KEY = 'children';
 
-type NodeCallback<DataType extends Record<string, any>> = (n: DataType) => boolean;
+type DataType = Record<string, any>;
+type NodeCallback<T, R = boolean> = (n: T) => R;
+type Recursive<T, K extends keyof T> = Omit<T, K> & { [k in K]?: Recursive<T, K>[] };
 
-export default class TreeTamer<DataType extends Record<string, any>> {
-  private _data: DataType[];
+export default class TreeTamer<
+  T extends DataType = { [k: string]: any; children?: DataType[] },
+  K extends keyof T = 'children'
+> {
+  private _data: Recursive<T, K>[];
   get data() {
     return this._data;
   }
 
-  private subKey: keyof DataType = DEFAULT_SUB_KEY;
+  private subKey: K = DEFAULT_SUB_KEY as K;
 
-  constructor(data: DataType[], subKey?: keyof DataType) {
+  constructor(data: Recursive<T, K>[], subKey?: K) {
     this._data = data;
-    this.subKey = subKey || DEFAULT_SUB_KEY;
+    this.subKey = subKey || (DEFAULT_SUB_KEY as K);
   }
 
-  private $update(callback: (draft: Draft<DataType[]>) => void) {
+  private $update(callback: (draft: Draft<Recursive<T, K>[]>) => void) {
     produce(this.data, callback);
   }
 
-  private $forEach(data: DataType[], callback: (n: DataType) => void) {
+  private $forEach(data: Recursive<T, K>[], callback: NodeCallback<Recursive<T, K>, void>) {
     if (!data) return;
     let open = [...data];
-    let node: DataType;
-    while ((node = <DataType>open.pop())) {
+    let node: Recursive<T, K>;
+    while ((node = <Recursive<T, K>>open.pop())) {
       callback(node);
       if (node[this.subKey]) {
         open = node[this.subKey].concat(open);
@@ -33,8 +38,8 @@ export default class TreeTamer<DataType extends Record<string, any>> {
     }
   }
 
-  private $filter(data: DataType[], callback: NodeCallback<DataType>) {
-    return (data || []).reduce<DataType[]>((res, node) => {
+  private $filter(data: Recursive<T, K>[], callback: NodeCallback<Recursive<T, K>>) {
+    return (data || []).reduce<Recursive<T, K>[]>((res, node) => {
       const sub = this.$filter(node[this.subKey], callback);
       if (callback(node) || sub.length) {
         res.push({ ...node, [this.subKey]: sub });
@@ -43,28 +48,27 @@ export default class TreeTamer<DataType extends Record<string, any>> {
     }, []);
   }
 
-  public insert(child: DataType, callback: NodeCallback<DataType>) {
+  public insert(child: Recursive<T, K>, callback: NodeCallback<Recursive<T, K>>) {
     this.$update(draft => {
-      this.$forEach(<DataType[]>draft, n => {
+      this.$forEach(draft as Recursive<T, K>[], n => {
         if (callback(n)) {
-          n[this.subKey] = <DataType[keyof DataType]>(n[this.subKey] || []);
-          n[this.subKey].push(child);
+          n[this.subKey] = n[this.subKey] ? n[this.subKey].concat(child) : [];
         }
       });
     });
   }
 
-  public remove(callback: NodeCallback<DataType>) {
+  public remove(callback: NodeCallback<Recursive<T, K>>) {
     this.$update(draft => {
-      this.$forEach(<DataType[]>draft, n => {
-        n[this.subKey] = n[this.subKey]?.filter((n: DataType) => !callback(n));
+      this.$forEach(draft as Recursive<T, K>[], n => {
+        n[this.subKey] = n[this.subKey]?.filter((n: T) => !callback(n));
       });
     });
   }
 
-  public update(data: DataType, callback: NodeCallback<DataType>) {
+  public update(data: Recursive<T, K>, callback: NodeCallback<Recursive<T, K>>) {
     this.$update(draft => {
-      this.$forEach(<DataType[]>draft, n => {
+      this.$forEach(draft as Recursive<T, K>[], n => {
         if (callback(n)) {
           n = { ...n, ...data };
         }
@@ -72,15 +76,15 @@ export default class TreeTamer<DataType extends Record<string, any>> {
     });
   }
 
-  public forEach(callback: (n: DataType) => void) {
+  public forEach(callback: NodeCallback<Recursive<T, K>, void>) {
     this.$forEach(this.data, callback);
   }
 
-  public find(callback: NodeCallback<DataType>) {
+  public find(callback: NodeCallback<Recursive<T, K>>) {
     if (!this.data) return;
     let open = [...this.data];
-    let node: DataType;
-    while ((node = <DataType>open.pop())) {
+    let node: Recursive<T, K>;
+    while ((node = <Recursive<T, K>>open.pop())) {
       if (callback(node)) {
         return node;
       }
@@ -90,8 +94,8 @@ export default class TreeTamer<DataType extends Record<string, any>> {
     }
   }
 
-  public findAll(callback: NodeCallback<DataType>) {
-    const result: DataType[] = [];
+  public findAll(callback: NodeCallback<Recursive<T, K>>) {
+    const result: Recursive<T, K>[] = [];
     this.$forEach(this.data, n => {
       if (callback(n)) {
         result.push(n);
@@ -100,7 +104,7 @@ export default class TreeTamer<DataType extends Record<string, any>> {
     return result;
   }
 
-  public filter(callback: NodeCallback<DataType>) {
+  public filter(callback: NodeCallback<Recursive<T, K>>) {
     return this.$filter(this.data, callback);
   }
 }
